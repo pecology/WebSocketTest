@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
@@ -11,7 +13,9 @@ namespace WebSocketClient
         static void Main(string[] args)
         {
             MainAsync().Wait();
+
         }
+
 
         private async static Task MainAsync()
         {
@@ -19,52 +23,43 @@ namespace WebSocketClient
             var uri = new Uri("ws://localhost:60304/webSocketTest");
             await socket.ConnectAsync(uri, CancellationToken.None);
 
-            Console.Write("Type send text: ");
-            var sendText = Console.ReadLine();
+            var messageQueue = new ConcurrentQueue<byte[]>();
 
-            var sendBuffer = Encoding.UTF8.GetBytes(sendText);
-            await socket.SendAsync(sendBuffer.AsMemory(), WebSocketMessageType.Text, true, CancellationToken.None);
+            // キューにあるデータを送信し続けるタスク
+            var sendTask = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    if (messageQueue.TryDequeue(out var message))
+                    {
+                        // キューにデータがあれば送信
+                        await socket.SendAsync(message, WebSocketMessageType.Binary, true, CancellationToken.None);
+                    }
+                    else
+                    {
+                        // キューにデータがなければ0.1秒待つ
+                        await Task.Delay(100);
+                    }
+                }
+            });
 
-            var recvBuffer = new byte[8];
-            await socket.ReceiveAsync(recvBuffer.AsMemory(), CancellationToken.None);
-            var recvText = Encoding.UTF8.GetString(recvBuffer);
-            Console.WriteLine("recv > " + recvText); 
+            // 一秒毎にキューにあるデータの数をログ出力
+            var logTask = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    await Task.Delay(1000);
+                    await Console.Out.WriteLineAsync("queue data count: " + messageQueue.Count);
+                }
+            });
 
-            //while(true)
-            //{
-            //    var segment = new ArraySegment<byte>(buffer);
-            //    var result = await socket.ReceiveAsync(segment, CancellationToken.None);
-
-            //    if (result.MessageType == WebSocketMessageType.Close)
-            //    {
-            //        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "OK", CancellationToken.None);
-            //        return;
-            //    }
-
-            //    if (result.MessageType == WebSocketMessageType.Binary)
-            //    {
-            //        await socket.CloseAsync(WebSocketCloseStatus.InvalidMessageType, "binary not suport", CancellationToken.None);
-            //        return;
-            //    }
-
-            //    var count = result.Count;
-            //    while (!result.EndOfMessage)
-            //    {
-            //        if (count >= buffer.Length)
-            //        {
-            //            await socket.CloseAsync(WebSocketCloseStatus.InvalidPayloadData, "too big", CancellationToken.None);
-
-            //            return;
-            //        }
-
-            //        segment = new ArraySegment<byte>(buffer, count, buffer.Length - count);
-            //        result = await socket.ReceiveAsync(segment, CancellationToken.None);
-            //        count += result.Count;
-            //    }
-
-            //    var message = Encoding.UTF8.GetString(buffer, 0, count);
-            //    Console.WriteLine("> " + message);
-            //}
+            // 0.1秒に一回1MBのデータをキューに入れる。
+            var sendData = new byte[1024 * 1024];
+            while(true)
+            {
+                await Task.Delay(100);
+                messageQueue.Enqueue(sendData);
+            }
         }
     }
 }

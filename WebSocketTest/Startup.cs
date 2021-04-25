@@ -1,16 +1,15 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using System;
-using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.HttpsPolicy;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace WebSocketTest
 {
@@ -85,17 +84,24 @@ namespace WebSocketTest
 
         private async Task Echo(HttpContext context, WebSocket webSocket)
         {
-            var buffer = new byte[1024 * 4];
-            var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+            var buffer = new byte[1024 * 1024];
 
-            while (!result.CloseStatus.HasValue)
+            var count = 0;
+            while(true)
             {
-                await webSocket.SendAsync(new ArraySegment<byte>(buffer, 0, result.Count), result.MessageType, result.EndOfMessage, CancellationToken.None);
+                // 0.1•b‚Éˆê‰ñ‘—‚ç‚ê‚Ä‚­‚é
+                await webSocket.ReceiveAsync(buffer, CancellationToken.None);
+                count++;
 
-                result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                if ( count % 200 == 0)
+                {
+                    // 200‰ñ‚Éˆê‰ñ‘Ò‚Â
+                    Debug.WriteLine("wait 10 seconds...");
+                    await Task.Delay(10000);
+                    Debug.WriteLine("resume");
+                }
             }
 
-            await webSocket.CloseAsync(result.CloseStatus.Value, result.CloseStatusDescription, CancellationToken.None);
         }
     }
 }
